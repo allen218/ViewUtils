@@ -8,6 +8,26 @@ import android.util.Log
 object ViewUtils {
     fun inject(obj: Any) {
         injectContentView(obj)
+        injectViewId(obj)
+    }
+
+    private fun injectViewId(obj: Any) {
+        val clz = obj.javaClass
+        val fields = clz.declaredFields
+        if (fields.isEmpty()) {
+            return
+        }
+
+        val findViewById = clz.getMethod("findViewById", Int::class.java)
+        fields.forEach {
+            it.isAccessible = true
+            val injectAnnotation = it.getAnnotation(Inject::class.java) ?: return@forEach
+
+            val viewId = injectAnnotation.value
+            val viewValue = findViewById.invoke(obj, viewId) ?: return@forEach
+
+            it.set(obj, viewValue)
+        }
     }
 
     private fun injectContentView(obj: Any) {
