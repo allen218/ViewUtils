@@ -1,6 +1,7 @@
 package com.allen.viewutils
 
 import android.util.Log
+import java.lang.reflect.Proxy
 
 /**
  * Created by allen on 19/4/26.
@@ -9,6 +10,56 @@ object ViewUtils {
     fun inject(obj: Any) {
         injectContentView(obj)
         injectViewId(obj)
+        injectEvent(obj)
+    }
+
+    private fun injectEvent(obj: Any) {
+        val clz = obj.javaClass
+        val declaredMethods = clz.declaredMethods
+        declaredMethods.forEach { method ->
+            val methodAnnotation = method.annotations ?: return@forEach
+
+            methodAnnotation.forEach {
+                val annotationClass = it.annotationClass
+                val javaObjectType = annotationClass.javaObjectType
+
+                val eventRoot = javaObjectType.getAnnotation(EventRoot::class.java) ?: return@forEach
+
+                val subscribeMethod = eventRoot.subscribeMethod
+                val eventSource = eventRoot.eventSource
+                val callbackMethod = eventRoot.callbackMethod
+
+//                val idsField = javaObjectType.getDeclaredField("ids") ?: return@forEach
+
+//                val idsArr = idsField.get(javaObjectType) as IntArray
+                val annotationStr = it.toString()
+                val idsArr =
+                    annotationStr.subSequence(
+                        annotationStr.indexOf("[") + 1,
+                        annotationStr.indexOf("]")
+                    ).split(",")
+                if (idsArr.isEmpty()) {
+                    return@forEach
+                }
+
+                for (id in idsArr) {
+                    val findViewById = clz.getMethod("findViewById", Int::class.java)
+                    val view = findViewById.invoke(obj, id.toInt())
+                    val resultMethod = view.javaClass.getMethod(subscribeMethod, eventSource.java)
+                    val eventProxy = Proxy.newProxyInstance(
+                        eventSource::class.java.classLoader,
+                        arrayOf(eventSource.java)
+                    ) { proxy, proxyMethod, args ->
+                        if (callbackMethod != proxyMethod.name) {
+                            return@newProxyInstance proxyMethod.invoke(proxy, *args)
+                        }
+                        return@newProxyInstance method.invoke(obj, *args)
+                    }
+                    resultMethod.invoke(view, eventProxy)
+                }
+            }
+
+        }
     }
 
     private fun injectViewId(obj: Any) {
